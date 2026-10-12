@@ -1,0 +1,80 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+  application:
+    name: ${APP_NAME:shop-api}
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: 1
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_SERVER_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
+      connect-timeout: 2s
+      timeout: 2s
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_AUTH:false}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS:false}
+      mail.smtp.connectiontimeout: 3000
+      mail.smtp.timeout: 3000
+      mail.smtp.writetimeout: 3000
+  flyway:
+    enabled: true
+  jackson:
+    default-property-inclusion: non_null
+server:
+  port: ${SERVER_PORT:8080}
+  forward-headers-strategy: none
+management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+app:
+  cache:
+    catalog-ttl: ${CATALOG_CACHE_TTL:PT30S}
+  events:
+    order-outbox:
+      topic: ${ORDER_EVENTS_TOPIC:shop.order-events.v1}
+      poll-delay: ${ORDER_OUTBOX_POLL_DELAY:PT1S}
+      batch-size: ${ORDER_OUTBOX_BATCH_SIZE:50}
+      lease: ${ORDER_OUTBOX_LEASE:PT1M}
+  waiting-room:
+    registration-capacity: ${WAITING_ROOM_REGISTRATION_CAPACITY:100}
+    checkout-capacity: ${WAITING_ROOM_CHECKOUT_CAPACITY:100}
+    maximum-queued-tickets: ${WAITING_ROOM_MAXIMUM_QUEUED_TICKETS:10000}
+    admission-lease: ${WAITING_ROOM_ADMISSION_LEASE:PT5M}
+  jwt:
+    secret: ${JWT_SECRET}
+    previous-secret: ${JWT_PREVIOUS_SECRET:}
+    lifetime: ${JWT_LIFETIME:PT15M}
+    issuer: ${JWT_ISSUER:shop-platform}
+  environment: ${APP_ENV:local}
+  pod-name: ${POD_NAME:local}
+  public-web-url: ${PUBLIC_WEB_URL:http://localhost:4200}
+  mail:
+    from: ${MAIL_FROM:no-reply@example.local}
+  api-clients:
+    json: ${API_CLIENTS_JSON:[]}
+    previous-json: ${API_CLIENTS_JSON_PREVIOUS:[]}
+  security:
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:4200}

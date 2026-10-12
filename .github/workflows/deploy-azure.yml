@@ -1,0 +1,182 @@
+name: Deploy to Azure
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group:
+        description: Existing Azure resource group containing the target ACR
+        required: true
+        type: string
+      location:
+        description: Azure region
+        required: true
+        default: southeastasia
+        type: string
+      registry_name:
+        description: Existing Azure Container Registry name
+        required: true
+        type: string
+      name_prefix:
+        description: Prefix for deployed Azure resources
+        required: true
+        default: shop
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy Azure Container Apps
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RESOURCE_GROUP: ${{ inputs.resource_group }}
+      LOCATION: ${{ inputs.location }}
+      REGISTRY_NAME: ${{ inputs.registry_name }}
+      NAME_PREFIX: ${{ inputs.name_prefix }}
+      DATABASE_URL: ${{ secrets.SHOP_DATABASE_URL }}
+      DATABASE_USERNAME: ${{ secrets.SHOP_DATABASE_USERNAME }}
+      DATABASE_PASSWORD: ${{ secrets.SHOP_DATABASE_PASSWORD }}
+      REDIS_HOST: ${{ secrets.SHOP_REDIS_HOST }}
+      REDIS_PORT: ${{ vars.SHOP_REDIS_PORT || '6380' }}
+      REDIS_PASSWORD: ${{ secrets.SHOP_REDIS_PASSWORD }}
+      BFF_REDIS_URL: ${{ secrets.SHOP_BFF_REDIS_URL }}
+      JWT_SECRET: ${{ secrets.SHOP_JWT_SECRET }}
+      API_CLIENTS_JSON: ${{ secrets.SHOP_API_CLIENTS_JSON || '[]' }}
+      KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.SHOP_KAFKA_BOOTSTRAP_SERVERS }}
+      KAFKA_SECURITY_PROTOCOL: ${{ vars.SHOP_KAFKA_SECURITY_PROTOCOL || 'SASL_SSL' }}
+      KAFKA_SASL_MECHANISM: ${{ vars.SHOP_KAFKA_SASL_MECHANISM || 'PLAIN' }}
+      KAFKA_SASL_JAAS_CONFIG: ${{ secrets.SHOP_KAFKA_SASL_JAAS_CONFIG }}
+      MAIL_HOST: ${{ secrets.SHOP_MAIL_HOST }}
+      MAIL_PORT: ${{ vars.SHOP_MAIL_PORT || '587' }}
+      MAIL_USERNAME: ${{ secrets.SHOP_MAIL_USERNAME }}
+      MAIL_PASSWORD: ${{ secrets.SHOP_MAIL_PASSWORD }}
+      MAIL_FROM: ${{ vars.SHOP_MAIL_FROM || 'no-reply@example.com' }}
+      MAIL_AUTH: ${{ vars.SHOP_MAIL_AUTH || 'true' }}
+      MAIL_STARTTLS: ${{ vars.SHOP_MAIL_STARTTLS || 'true' }}
+      ALLOWED_ORIGINS: ${{ vars.SHOP_ADDITIONAL_ALLOWED_ORIGINS || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in DATABASE_URL DATABASE_USERNAME DATABASE_PASSWORD REDIS_HOST REDIS_PASSWORD \
+            BFF_REDIS_URL JWT_SECRET KAFKA_BOOTSTRAP_SERVERS KAFKA_SASL_JAAS_CONFIG \
+            MAIL_HOST MAIL_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required deployment configuration $name is empty."
+              exit 1
+            fi
+          done
+          if [[ ! "$NAME_PREFIX" =~ ^[a-z][a-z0-9-]{1,19}$ ]]; then
+            echo "::error::name_prefix must start with a lowercase letter and contain only lowercase letters, digits, and hyphens (2-20 characters)."
+            exit 1
+          fi
+      - name: Build application images
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_IMAGE="$(az acr show --name "$REGISTRY_NAME" --query loginServer --output tsv)/shop-api:${GITHUB_SHA}"
+          BFF_IMAGE="$(az acr show --name "$REGISTRY_NAME" --query loginServer --output tsv)/shop-bff:${GITHUB_SHA}"
+          WEB_IMAGE="$(az acr show --name "$REGISTRY_NAME" --query loginServer --output tsv)/shop-storefront:${GITHUB_SHA}"
+          echo "API_IMAGE=$API_IMAGE" >> "$GITHUB_ENV"
+          echo "BFF_IMAGE=$BFF_IMAGE" >> "$GITHUB_ENV"
+          echo "WEB_IMAGE=$WEB_IMAGE" >> "$GITHUB_ENV"
+          az acr build --registry "$REGISTRY_NAME" --image "shop-api:${GITHUB_SHA}" backend
+          az acr build --registry "$REGISTRY_NAME" --image "shop-bff:${GITHUB_SHA}" bff
+          az acr build --registry "$REGISTRY_NAME" --image "shop-storefront:${GITHUB_SHA}" frontend
+      - name: Validate Azure infrastructure deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          PARAMETERS=(
+            "location=$LOCATION"
+            "namePrefix=$NAME_PREFIX"
+            "registryName=$REGISTRY_NAME"
+            "apiImage=$API_IMAGE"
+            "bffImage=$BFF_IMAGE"
+            "webImage=$WEB_IMAGE"
+            "databaseUrl=$DATABASE_URL"
+            "databaseUsername=$DATABASE_USERNAME"
+            "databasePassword=$DATABASE_PASSWORD"
+            "redisHost=$REDIS_HOST"
+            "redisPort=$REDIS_PORT"
+            "redisPassword=$REDIS_PASSWORD"
+            "bffRedisUrl=$BFF_REDIS_URL"
+            "jwtSecret=$JWT_SECRET"
+            "apiClientsJson=$API_CLIENTS_JSON"
+            "kafkaBootstrapServers=$KAFKA_BOOTSTRAP_SERVERS"
+            "kafkaSecurityProtocol=$KAFKA_SECURITY_PROTOCOL"
+            "kafkaSaslMechanism=$KAFKA_SASL_MECHANISM"
+            "kafkaSaslJaasConfig=$KAFKA_SASL_JAAS_CONFIG"
+            "mailHost=$MAIL_HOST"
+            "mailPort=$MAIL_PORT"
+            "mailUsername=$MAIL_USERNAME"
+            "mailPassword=$MAIL_PASSWORD"
+            "mailFrom=$MAIL_FROM"
+            "mailAuth=$MAIL_AUTH"
+            "mailStartTls=$MAIL_STARTTLS"
+            "additionalAllowedOrigins=$ALLOWED_ORIGINS"
+          )
+          az deployment group validate \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/azure/main.bicep \
+            --parameters "${PARAMETERS[@]}"
+      - name: Deploy infrastructure and application
+        shell: bash
+        run: |
+          set -euo pipefail
+          PARAMETERS=(
+            "location=$LOCATION"
+            "namePrefix=$NAME_PREFIX"
+            "registryName=$REGISTRY_NAME"
+            "apiImage=$API_IMAGE"
+            "bffImage=$BFF_IMAGE"
+            "webImage=$WEB_IMAGE"
+            "databaseUrl=$DATABASE_URL"
+            "databaseUsername=$DATABASE_USERNAME"
+            "databasePassword=$DATABASE_PASSWORD"
+            "redisHost=$REDIS_HOST"
+            "redisPort=$REDIS_PORT"
+            "redisPassword=$REDIS_PASSWORD"
+            "bffRedisUrl=$BFF_REDIS_URL"
+            "jwtSecret=$JWT_SECRET"
+            "apiClientsJson=$API_CLIENTS_JSON"
+            "kafkaBootstrapServers=$KAFKA_BOOTSTRAP_SERVERS"
+            "kafkaSecurityProtocol=$KAFKA_SECURITY_PROTOCOL"
+            "kafkaSaslMechanism=$KAFKA_SASL_MECHANISM"
+            "kafkaSaslJaasConfig=$KAFKA_SASL_JAAS_CONFIG"
+            "mailHost=$MAIL_HOST"
+            "mailPort=$MAIL_PORT"
+            "mailUsername=$MAIL_USERNAME"
+            "mailPassword=$MAIL_PASSWORD"
+            "mailFrom=$MAIL_FROM"
+            "mailAuth=$MAIL_AUTH"
+            "mailStartTls=$MAIL_STARTTLS"
+            "additionalAllowedOrigins=$ALLOWED_ORIGINS"
+          )
+          URL="$(az deployment group create \
+            --name "shop-${GITHUB_SHA:0:12}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/azure/main.bicep \
+            --parameters "${PARAMETERS[@]}" \
+            --query "properties.outputs.storefrontUrl.value" \
+            --output tsv)"
+          echo "Deployment completed. Storefront: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Deployment output" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Storefront/CDN: $URL" >> "$GITHUB_STEP_SUMMARY"

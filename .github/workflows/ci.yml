@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests (Java 25)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - run: mvn -B -f backend/pom.xml verify
+
+  bff:
+    name: BFF tests (Node.js 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: npm
+          cache-dependency-path: bff/package-lock.json
+      - run: npm ci
+        working-directory: bff
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: bff
+      - run: npm test
+        working-directory: bff
+
+  frontend:
+    name: Frontend tests and production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run test:ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  integration:
+    name: Compose end-to-end smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+      - name: Start dependencies and application
+        run: |
+          cp .env.example .env
+          docker compose -f compose.devtools.yml up -d --wait postgres redis mailpit kafka
+          docker compose -f compose.application.yml up -d --build --wait
+      - name: Run identity, checkout, and metrics smoke tests
+        run: node tests/e2e/p0-smoke.mjs
+      - name: Stop test stack
+        if: always()
+        run: |
+          docker compose -f compose.application.yml down -v
+          docker compose -f compose.devtools.yml down -v
+          rm -f .env
+
+  security:
+    name: Trivy dependency and configuration gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on unfixed high or critical vulnerabilities and misconfigurations
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-dirs: .git,frontend/node_modules,bff/node_modules

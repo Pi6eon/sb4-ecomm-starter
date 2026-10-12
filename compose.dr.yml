@@ -1,0 +1,73 @@
+name: shop-platform-devtools
+services:
+  postgres:
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=8
+      - -c
+      - max_replication_slots=4
+      - -c
+      - max_slot_wal_keep_size=1024MB
+      - -c
+      - wal_keep_size=256MB
+      - -c
+      - synchronous_commit=on
+      - -c
+      - hot_standby=on
+    environment:
+      POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER:-shop_replication}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}}
+    volumes:
+      - ./scripts/dr-bootstrap.sh:/usr/local/bin/dr-bootstrap.sh:ro
+    stop_grace_period: 30s
+
+  postgres-dr:
+    image: postgres:17-alpine
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          until pg_isready -h postgres -p 5432 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"; do sleep 2; done
+          export PGPASSFILE=/var/lib/postgresql/.pgpass
+          printf '%s\n' "postgres:5432:replication:$$POSTGRES_REPLICATION_USER:$$POSTGRES_REPLICATION_PASSWORD" > "$$PGPASSFILE"
+          chown postgres:postgres "$$PGPASSFILE"
+          chmod 0600 "$$PGPASSFILE"
+          pg_basebackup -h postgres -p 5432 -U "$$POSTGRES_REPLICATION_USER" -D "$$PGDATA" -Fp -Xs -P -R -S shop_dr
+          chmod 0700 "$$PGDATA"
+        fi
+        printf '%s\n' "postgres:5432:replication:$$POSTGRES_REPLICATION_USER:$$POSTGRES_REPLICATION_PASSWORD" > /var/lib/postgresql/.pgpass
+        chown postgres:postgres /var/lib/postgresql/.pgpass
+        chmod 0600 /var/lib/postgresql/.pgpass
+        sed -i '/^primary_conninfo = /d' "$$PGDATA/postgresql.auto.conf"
+        printf "%s\n" "primary_conninfo = 'host=postgres port=5432 user=$$POSTGRES_REPLICATION_USER passfile=/var/lib/postgresql/.pgpass application_name=shop_dr'" >> "$$PGDATA/postgresql.auto.conf"
+        exec docker-entrypoint.sh postgres -c hot_standby=on
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shop}
+      POSTGRES_USER: ${POSTGRES_USER:-shop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER:-shop_replication}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres-dr-data:/var/lib/postgresql/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks: [shop-platform]
+    stop_grace_period: 30s
+
+networks:
+  shop-platform:
+    name: ${DR_NETWORK_NAME:-shop-platform}
+
+volumes:
+  postgres-dr-data:

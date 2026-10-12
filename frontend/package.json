@@ -1,0 +1,40 @@
+{
+  "name": "shop-storefront",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "ng serve",
+    "build": "ng build",
+    "test": "ng test",
+    "test:ci": "ng test --watch=false",
+    "test:integration": "ng test --watch=false --include=src/app/app.component.integration.spec.ts",
+    "test:customer-registration": "ng test --watch=false --include=src/app/app.component.integration.spec.ts --filter=customer-registration-flow",
+    "test:customer-verification": "ng test --watch=false --include=src/app/app.component.integration.spec.ts --filter=customer-verification-flow",
+    "test:customer-login": "ng test --watch=false --include=src/app/app.component.integration.spec.ts --filter=customer-login-flow",
+    "test:customer-full-flow": "ng test --watch=false --include=src/app/app.component.integration.spec.ts --filter=customer-full-flow",
+    "test:customer-cart-checkout": "ng test --watch=false --include=src/app/app.component.integration.spec.ts --filter=customer-cart-checkout-flow",
+    "test:customer-order-history": "ng test --watch=false --include=src/app/app.component.integration.spec.ts --filter=customer-order-history-flow",
+    "test:guest-cart-checkout": "ng test --watch=false --include=src/app/app.component.integration.spec.ts --filter=guest-cart-checkout-flow",
+    "test:guest-order-history": "ng test --watch=false --include=src/app/app.component.integration.spec.ts --filter=guest-order-history-flow"
+  },
+  "dependencies": {
+    "@angular/common": "22.2.2",
+    "@angular/compiler": "22.2.2",
+    "@angular/core": "22.2.2",
+    "@angular/forms": "22.2.2",
+    "@angular/platform-browser": "22.2.2",
+    "@ngrx/effects": "22.0.1",
+    "@ngrx/store": "22.0.1",
+    "rxjs": "7.8.1",
+    "tslib": "2.6.2",
+    "zone.js": "0.16.3"
+  },
+  "devDependencies": {
+    "@angular/build": "22.2.2",
+    "@angular/cli": "22.2.2",
+    "@angular/compiler-cli": "22.2.2",
+    "jsdom": "27.1.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.0"
+  }
+}

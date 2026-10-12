@@ -1,0 +1,46 @@
+name: CodeQL
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [java-kotlin, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: manual
+      - if: matrix.language == 'java-kotlin'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - if: matrix.language == 'java-kotlin'
+        run: mvn -B -f backend/pom.xml -DskipTests package
+      - if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+      - if: matrix.language == 'javascript-typescript'
+        name: Build JavaScript and TypeScript projects
+        run: |
+          npm ci --prefix bff
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+      - uses: github/codeql-action/analyze@v3

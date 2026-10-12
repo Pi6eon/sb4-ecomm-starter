@@ -1,0 +1,30 @@
+groups:
+  - name: shop-platform
+    rules:
+      - alert: ShopApiUnavailable
+        expr: up{job="shop-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Shop API metrics target is unavailable
+
+      - alert: ShopBffUnavailable
+        expr: up{job="shop-bff"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Shop BFF metrics target is unavailable
+
+      - alert: ShopApiHigh5xxRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{job="shop-api",status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(http_server_requests_seconds_count{job="shop-api"}[5m])), 0.001)
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Shop API 5xx responses exceed 5 percent

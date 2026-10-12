@@ -1,0 +1,69 @@
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "newProjectRoot": "projects",
+  "projects": {
+    "shop-storefront": {
+      "projectType": "application",
+      "schematics": {},
+      "root": "",
+      "sourceRoot": "src",
+      "prefix": "shop",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "outputPath": "dist/shop-storefront",
+            "index": "src/index.html",
+            "browser": "src/main.ts",
+            "polyfills": ["zone.js"],
+            "tsConfig": "tsconfig.app.json",
+            "assets": ["src/assets"],
+            "styles": ["src/styles.css"],
+            "outputHashing": "all"
+          },
+          "configurations": {
+            "development": {
+              "optimization": false,
+              "sourceMap": true
+            },
+            "production": {
+              "optimization": {
+                "styles": {
+                  "inlineCritical": false
+                }
+              },
+              "budgets": [
+                { "type": "initial", "maximumWarning": "700kb", "maximumError": "1mb" },
+                { "type": "anyComponentStyle", "maximumWarning": "8kb", "maximumError": "12kb" }
+              ],
+              "outputHashing": "all"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "development": {
+              "buildTarget": "shop-storefront:build:development"
+            },
+            "production": {
+              "buildTarget": "shop-storefront:build:production"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "tsconfig.spec.json"
+          }
+        }
+      }
+    }
+  },
+  "cli": {
+    "analytics": "bbaa1ab5-cb3a-4732-96ec-5ad543792694"
+  }
+}

@@ -1,0 +1,91 @@
+name: shop-platform-application
+services:
+  api:
+    build:
+      context: ./backend
+    environment:
+      SPRING_PROFILES_ACTIVE: ${APP_ENV:-local}
+      DATABASE_URL: jdbc:postgresql://${DATABASE_HOST:-postgres}:5432/${POSTGRES_DB:-shop}
+      DATABASE_USERNAME: ${POSTGRES_USER:-shop}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      REDIS_HOST: redis
+      REDIS_SERVER_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      REDIS_SSL_ENABLED: ${REDIS_SSL_ENABLED:-false}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CATALOG_CACHE_TTL: ${CATALOG_CACHE_TTL:-PT30S}
+      WAITING_ROOM_REGISTRATION_CAPACITY: ${WAITING_ROOM_REGISTRATION_CAPACITY:-100}
+      WAITING_ROOM_CHECKOUT_CAPACITY: ${WAITING_ROOM_CHECKOUT_CAPACITY:-100}
+      WAITING_ROOM_MAXIMUM_QUEUED_TICKETS: ${WAITING_ROOM_MAXIMUM_QUEUED_TICKETS:-10000}
+      WAITING_ROOM_ADMISSION_LEASE: ${WAITING_ROOM_ADMISSION_LEASE:-PT5M}
+      ORDER_EVENTS_TOPIC: ${ORDER_EVENTS_TOPIC:-shop.order-events.v1}
+      AZURE_KEYVAULT_URL: ${AZURE_KEYVAULT_URL:-}
+      API_CLIENTS_JSON: "${API_CLIENTS_JSON:-[]}"
+      API_CLIENTS_JSON_PREVIOUS: "${API_CLIENTS_JSON_PREVIOUS:-[]}"
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:4200}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:4200}
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+      MAIL_FROM: ${MAIL_FROM:-no-reply@example.local}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_AUTH: ${MAIL_AUTH:-false}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-false}
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,metrics,prometheus
+      MANAGEMENT_SERVER_PORT: 8081
+      APP_NAME: shop-api
+      POD_NAME: shop-api-local
+      SERVER_PORT: 8080
+    ports:
+      - "${API_PORT:-8080}:8080"
+      - "${MANAGEMENT_BIND_ADDRESS:-127.0.0.1}:${MANAGEMENT_PORT:-8081}:8081"
+    expose: ["8081"]
+    restart: unless-stopped
+    networks: [shop-platform]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    mem_limit: 768m
+
+  bff:
+    build:
+      context: ./bff
+    environment:
+      API_URL: http://api:8080
+      PORT: 3000
+      METRICS_PORT: 3001
+      RATE_LIMIT_MAX: 100
+      RATE_LIMIT_WINDOW: 1 minute
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379
+      APP_NAME: shop-bff
+      NODE_ENV: production
+    ports:
+      - "${BFF_PORT:-3000}:3000"
+      - "${BFF_METRICS_BIND_ADDRESS:-127.0.0.1}:${BFF_METRICS_PORT:-13001}:3001"
+    expose: ["3001"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [shop-platform]
+
+  web:
+    build:
+      context: ./frontend
+    environment:
+      BFF_HOST: bff
+      BFF_PORT: 3000
+      NGINX_RESOLVER: 127.0.0.11
+    ports:
+      - "${WEB_PORT:-4200}:8080"
+    depends_on: [bff]
+    restart: unless-stopped
+    networks: [shop-platform]
+
+networks:
+  shop-platform:
+    external: true
+    name: ${APP_NETWORK_NAME:-shop-platform}
